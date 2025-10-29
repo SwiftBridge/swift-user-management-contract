@@ -2,35 +2,70 @@ const hre = require("hardhat");
 const fs = require('fs');
 
 async function main() {
-  const [deployer] = await hre.ethers.getSigners();
-  const balance = await deployer.getBalance();
-  
-  console.log("Deploying with:", deployer.address);
-  console.log("Balance:", hre.ethers.utils.formatEther(balance), "ETH\n");
+  console.log("🚀 Deploying UserManagement Contract to Base Sepolia...\n");
 
-  const Contract = await hre.ethers.getContractFactory("CONTRACT_NAME");
-  const contract = await Contract.deploy(CONSTRUCTOR_ARGS);
-  await contract.deployed();
-  
-  console.log("Contract deployed to:", contract.address);
-  await contract.deployTransaction.wait(5);
-  
-  const receipt = await contract.deployTransaction.wait();
+  // Get deployer account
+  const [deployer] = await hre.ethers.getSigners();
+  console.log("📝 Deploying with account:", deployer.address);
+
+  // Check balance
+  const balance = await hre.ethers.provider.getBalance(deployer.address);
+  console.log("💰 Account balance:", hre.ethers.formatEther(balance), "ETH\n");
+
+  // Deploy UserManagement contract
+  const UserManagement = await hre.ethers.getContractFactory("UserManagement");
+
+  console.log("⏳ Deploying UserManagement contract...");
+  const userManagement = await UserManagement.deploy();
+
+  await userManagement.waitForDeployment();
+  const contractAddress = await userManagement.getAddress();
+  console.log("✅ UserManagement deployed to:", contractAddress);
+
+  // Wait for block confirmations
+  console.log("⏳ Waiting for 5 block confirmations...");
+  const deployTx = userManagement.deploymentTransaction();
+  await deployTx.wait(5);
+  console.log("✅ Confirmed!\n");
+
+  // Get deployment info
+  const receipt = await deployTx.wait();
+
+  // Save deployment info
   const deploymentInfo = {
-    network: "base-mainnet",
-    address: contract.address,
+    network: "base-sepolia",
+    contractName: "UserManagement",
+    contractAddress: contractAddress,
     deployer: deployer.address,
+    chainId: 84532,
     timestamp: new Date().toISOString(),
     blockNumber: receipt.blockNumber,
-    txHash: receipt.transactionHash,
-    gasUsed: receipt.gasUsed.toString()
+    transactionHash: receipt.hash,
+    gasUsed: receipt.gasUsed.toString(),
+    gasPrice: receipt.gasPrice.toString()
   };
-  
-  fs.writeFileSync('deployment.json', JSON.stringify(deploymentInfo, null, 2));
-  console.log("\nDeployment saved to deployment.json");
+
+  // Save to file
+  fs.writeFileSync(
+    'deployment.json',
+    JSON.stringify(deploymentInfo, null, 2)
+  );
+
+  console.log("📄 Deployment info saved to deployment.json\n");
+
+  console.log("═══════════════════════════════════════");
+  console.log("🎉 DEPLOYMENT SUCCESSFUL!");
+  console.log("═══════════════════════════════════════");
+  console.log("Contract:", contractAddress);
+  console.log("Gas Used:", receipt.gasUsed.toString());
+  console.log("═══════════════════════════════════════\n");
+
+  return userManagement;
 }
 
-main().then(() => process.exit(0)).catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(0))
+  .catch((error) => {
+    console.error("❌ Deployment failed:", error);
+    process.exit(1);
+  });
