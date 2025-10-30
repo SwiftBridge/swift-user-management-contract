@@ -399,8 +399,6 @@ contract UserManagement is ReentrancyGuard, Ownable {
 
     /**
      * @dev Get user profile
-     * @param _user Address of the user
-     * @return Profile data
      */
     function getUserProfile(address _user) external view returns (
         string memory username,
@@ -438,7 +436,6 @@ contract UserManagement is ReentrancyGuard, Ownable {
     /**
      * @dev Get user stats
      * @param _user Address of the user
-     * @return Stats data
      */
     function getUserStats(address _user) external view returns (
         uint256 messagesSent,
