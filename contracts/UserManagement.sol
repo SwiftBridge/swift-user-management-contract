@@ -3,7 +3,6 @@ pragma solidity ^0.8.19;
 
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
 /**
@@ -12,8 +11,30 @@ import "@openzeppelin/contracts/utils/Strings.sol";
  * @author Swift v2 Team
  */
 contract UserManagement is ReentrancyGuard, Ownable {
-    using Counters for Counters.Counter;
     using Strings for uint256;
+
+    // Custom Errors
+    error UserNotRegistered();
+    error UserAlreadyRegistered();
+    error UserNotActive();
+    error UserBanned();
+    error UserAlreadyBanned();
+    error UserNotBanned();
+    error NotAdmin();
+    error NotModerator();
+    error NotAuthorized();
+    error UsernameTooShort();
+    error UsernameTooLong();
+    error UsernameTaken();
+    error BioTooLong();
+    error InsufficientFee();
+    error CannotBanOwner();
+    error InvalidVerificationId();
+    error RequestAlreadyProcessed();
+    error CannotRemoveOwnerStatus();
+    error VerificationDataRequired();
+    error NoBalanceToWithdraw();
+    error WithdrawFailed();
 
     // Events
     event UserRegistered(
@@ -56,6 +77,9 @@ contract UserManagement is ReentrancyGuard, Ownable {
         string permission,
         address indexed revoker
     );
+    
+    event RegistrationFeeUpdated(uint256 newFee);
+    event VerificationFeeUpdated(uint256 newFee);
 
     // Structs
     struct UserProfile {
@@ -94,8 +118,8 @@ contract UserManagement is ReentrancyGuard, Ownable {
     }
 
     // State variables
-    Counters.Counter private _userIdCounter;
-    Counters.Counter private _verificationIdCounter;
+    uint256 private _userIdCounter;
+    uint256 private _verificationIdCounter;
 
     mapping(address => UserProfile) public userProfiles;
     mapping(address => UserStats) public userStats;
@@ -109,44 +133,43 @@ contract UserManagement is ReentrancyGuard, Ownable {
     uint256 public constant MIN_USERNAME_LENGTH = 3;
     uint256 public constant MAX_USERNAME_LENGTH = 20;
     uint256 public constant MAX_BIO_LENGTH = 500;
-    uint256 public constant REGISTRATION_FEE = 0.000003 ether; // ~$0.009 at $3000 ETH
-    uint256 public constant VERIFICATION_FEE = 0.000003 ether; // ~$0.009 at $3000 ETH
+    
+    // Configurable Fees
+    uint256 public registrationFee = 0.000003 ether; // ~$0.009 at $3000 ETH
+    uint256 public verificationFee = 0.000003 ether; // ~$0.009 at $3000 ETH
 
     // Modifiers
     modifier onlyRegisteredUser() {
-        require(userProfiles[msg.sender].registeredAt > 0, "User not registered");
+        if (userProfiles[msg.sender].registeredAt == 0) revert UserNotRegistered();
         _;
     }
 
     modifier onlyActiveUser() {
-        require(userProfiles[msg.sender].isActive, "User not active");
-        require(!userProfiles[msg.sender].isBanned, "User is banned");
+        if (!userProfiles[msg.sender].isActive) revert UserNotActive();
+        if (userProfiles[msg.sender].isBanned) revert UserBanned();
         _;
     }
 
     modifier onlyAdmin() {
-        require(admins[msg.sender] || msg.sender == owner(), "Not an admin");
+        if (!admins[msg.sender] && msg.sender != owner()) revert NotAdmin();
         _;
     }
 
     modifier onlyModerator() {
-        require(
-            moderators[msg.sender] || admins[msg.sender] || msg.sender == owner(),
-            "Not a moderator"
-        );
+        if (!moderators[msg.sender] && !admins[msg.sender] && msg.sender != owner()) revert NotModerator();
         _;
     }
 
     modifier validUsername(string memory _username) {
-        require(bytes(_username).length >= MIN_USERNAME_LENGTH, "Username too short");
-        require(bytes(_username).length <= MAX_USERNAME_LENGTH, "Username too long");
-        require(usernameToAddress[_username] == address(0), "Username already taken");
+        if (bytes(_username).length < MIN_USERNAME_LENGTH) revert UsernameTooShort();
+        if (bytes(_username).length > MAX_USERNAME_LENGTH) revert UsernameTooLong();
+        if (usernameToAddress[_username] != address(0)) revert UsernameTaken();
         _;
     }
 
     constructor() {
-        _userIdCounter.increment();
-        _verificationIdCounter.increment();
+        _userIdCounter = 1;
+        _verificationIdCounter = 1;
         
         // Make owner an admin
         admins[msg.sender] = true;
@@ -163,12 +186,11 @@ contract UserManagement is ReentrancyGuard, Ownable {
         string memory _bio,
         string memory _avatar
     ) external payable nonReentrant validUsername(_username) {
-        require(msg.value >= REGISTRATION_FEE, "Insufficient registration fee");
-        require(userProfiles[msg.sender].registeredAt == 0, "User already registered");
-        require(bytes(_bio).length <= MAX_BIO_LENGTH, "Bio too long");
+        if (msg.value < registrationFee) revert InsufficientFee();
+        if (userProfiles[msg.sender].registeredAt != 0) revert UserAlreadyRegistered();
+        if (bytes(_bio).length > MAX_BIO_LENGTH) revert BioTooLong();
 
-        uint256 userId = _userIdCounter.current();
-        _userIdCounter.increment();
+        _userIdCounter++;
 
         UserProfile storage profile = userProfiles[msg.sender];
         profile.username = _username;
@@ -215,13 +237,13 @@ contract UserManagement is ReentrancyGuard, Ownable {
         string memory _github,
         string memory _website
     ) external onlyRegisteredUser onlyActiveUser {
-        require(bytes(_bio).length <= MAX_BIO_LENGTH, "Bio too long");
+        if (bytes(_bio).length > MAX_BIO_LENGTH) revert BioTooLong();
         
         // Check if username is being changed
         if (keccak256(bytes(_username)) != keccak256(bytes(userProfiles[msg.sender].username))) {
-            require(usernameToAddress[_username] == address(0), "Username already taken");
-            require(bytes(_username).length >= MIN_USERNAME_LENGTH, "Username too short");
-            require(bytes(_username).length <= MAX_USERNAME_LENGTH, "Username too long");
+            if (usernameToAddress[_username] != address(0)) revert UsernameTaken();
+            if (bytes(_username).length < MIN_USERNAME_LENGTH) revert UsernameTooShort();
+            if (bytes(_username).length > MAX_USERNAME_LENGTH) revert UsernameTooLong();
             
             // Free up old username
             usernameToAddress[userProfiles[msg.sender].username] = address(0);
@@ -250,11 +272,11 @@ contract UserManagement is ReentrancyGuard, Ownable {
         string memory _verificationData,
         string memory _verificationType
     ) external payable onlyRegisteredUser onlyActiveUser {
-        require(msg.value >= VERIFICATION_FEE, "Insufficient verification fee");
-        require(bytes(_verificationData).length > 0, "Verification data required");
+        if (msg.value < verificationFee) revert InsufficientFee();
+        if (bytes(_verificationData).length == 0) revert VerificationDataRequired();
 
-        uint256 verificationId = _verificationIdCounter.current();
-        _verificationIdCounter.increment();
+        uint256 verificationId = _verificationIdCounter;
+        _verificationIdCounter++;
 
         VerificationRequest storage request = verificationRequests[verificationId];
         request.user = msg.sender;
@@ -276,10 +298,10 @@ contract UserManagement is ReentrancyGuard, Ownable {
         uint256 _verificationId,
         bool _approved
     ) external onlyAdmin {
-        require(_verificationId > 0 && _verificationId < _verificationIdCounter.current(), "Invalid verification ID");
+        if (_verificationId == 0 || _verificationId >= _verificationIdCounter) revert InvalidVerificationId();
         
         VerificationRequest storage request = verificationRequests[_verificationId];
-        require(!request.isProcessed, "Request already processed");
+        if (request.isProcessed) revert RequestAlreadyProcessed();
 
         request.isProcessed = true;
         request.isApproved = _approved;
@@ -296,9 +318,9 @@ contract UserManagement is ReentrancyGuard, Ownable {
      * @param _reason Reason for banning
      */
     function banUser(address _user, string memory _reason) external onlyAdmin {
-        require(userProfiles[_user].registeredAt > 0, "User not registered");
-        require(!userProfiles[_user].isBanned, "User already banned");
-        require(_user != owner(), "Cannot ban owner");
+        if (userProfiles[_user].registeredAt == 0) revert UserNotRegistered();
+        if (userProfiles[_user].isBanned) revert UserAlreadyBanned();
+        if (_user == owner()) revert CannotBanOwner();
 
         userProfiles[_user].isBanned = true;
         userProfiles[_user].isActive = false;
@@ -311,7 +333,7 @@ contract UserManagement is ReentrancyGuard, Ownable {
      * @param _user Address of the user to unban
      */
     function unbanUser(address _user) external onlyAdmin {
-        require(userProfiles[_user].isBanned, "User not banned");
+        if (!userProfiles[_user].isBanned) revert UserNotBanned();
 
         userProfiles[_user].isBanned = false;
         userProfiles[_user].isActive = true;
@@ -325,7 +347,7 @@ contract UserManagement is ReentrancyGuard, Ownable {
      * @param _permission Permission to grant
      */
     function grantPermission(address _user, string memory _permission) external onlyAdmin {
-        require(userProfiles[_user].registeredAt > 0, "User not registered");
+        if (userProfiles[_user].registeredAt == 0) revert UserNotRegistered();
         
         userProfiles[_user].permissions[_permission] = true;
         emit PermissionGranted(_user, _permission, msg.sender);
@@ -337,7 +359,7 @@ contract UserManagement is ReentrancyGuard, Ownable {
      * @param _permission Permission to revoke
      */
     function revokePermission(address _user, string memory _permission) external onlyAdmin {
-        require(userProfiles[_user].registeredAt > 0, "User not registered");
+        if (userProfiles[_user].registeredAt == 0) revert UserNotRegistered();
         
         userProfiles[_user].permissions[_permission] = false;
         emit PermissionRevoked(_user, _permission, msg.sender);
@@ -349,7 +371,7 @@ contract UserManagement is ReentrancyGuard, Ownable {
      * @param _reputationChange Change in reputation (can be negative)
      */
     function updateReputation(address _user, int256 _reputationChange) external onlyModerator {
-        require(userProfiles[_user].registeredAt > 0, "User not registered");
+        if (userProfiles[_user].registeredAt == 0) revert UserNotRegistered();
         
         UserStats storage stats = userStats[_user];
         if (_reputationChange > 0) {
@@ -377,12 +399,7 @@ contract UserManagement is ReentrancyGuard, Ownable {
         string memory _statType,
         uint256 _increment
     ) external {
-        require(
-            msg.sender == owner() ||
-            admins[msg.sender] ||
-            moderators[msg.sender],
-            "Not authorized to update stats"
-        );
+        if (msg.sender != owner() && !admins[msg.sender] && !moderators[msg.sender]) revert NotAuthorized();
 
         UserStats storage stats = userStats[_user];
         
@@ -488,7 +505,7 @@ contract UserManagement is ReentrancyGuard, Ownable {
      * @param _admin Address to remove admin status from
      */
     function removeAdmin(address _admin) external onlyOwner {
-        require(_admin != owner(), "Cannot remove owner admin status");
+        if (_admin == owner()) revert CannotRemoveOwnerStatus();
         admins[_admin] = false;
     }
 
@@ -509,11 +526,29 @@ contract UserManagement is ReentrancyGuard, Ownable {
     }
 
     /**
+     * @dev Set registration fee
+     * @param _fee New fee in wei
+     */
+    function setRegistrationFee(uint256 _fee) external onlyOwner {
+        registrationFee = _fee;
+        emit RegistrationFeeUpdated(_fee);
+    }
+
+    /**
+     * @dev Set verification fee
+     * @param _fee New fee in wei
+     */
+    function setVerificationFee(uint256 _fee) external onlyOwner {
+        verificationFee = _fee;
+        emit VerificationFeeUpdated(_fee);
+    }
+
+    /**
      * @dev Get total user count
      * @return Total number of registered users
      */
     function getTotalUserCount() external view returns (uint256) {
-        return _userIdCounter.current() - 1;
+        return _userIdCounter - 1;
     }
 
     /**
@@ -521,9 +556,9 @@ contract UserManagement is ReentrancyGuard, Ownable {
      */
     function withdraw() external onlyOwner nonReentrant {
         uint256 balance = address(this).balance;
-        require(balance > 0, "No balance to withdraw");
+        if (balance == 0) revert NoBalanceToWithdraw();
 
         (bool success, ) = payable(owner()).call{value: balance}("");
-        require(success, "Withdraw failed");
+        if (!success) revert WithdrawFailed();
     }
 }
