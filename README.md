@@ -33,9 +33,14 @@ cp .env.example .env
 ## Deployment
 
 ```bash
-npm run deploy:testnet  # Test first
-npm run deploy          # Mainnet
-npm run verify         # Verify on BaseScan
+npm run deploy:testnet  # Base Sepolia
+npm run deploy          # Base Mainnet
+
+# Celo Deployment
+npx hardhat run scripts/deploy.js --network celo-alfajores  # Testnet
+npx hardhat run scripts/deploy.js --network celo            # Mainnet
+
+npm run verify:celo     # Verify on CeloScan
 ```
 
 ## Admin Features

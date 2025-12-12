@@ -29,9 +29,23 @@ module.exports = {
       accounts: accounts,
       chainId: 84532,
     },
+    celo: {
+      url: process.env.CELO_MAINNET_RPC_URL || "https://forno.celo.org",
+      accounts: accounts,
+      chainId: 42220,
+    },
+    "celo-alfajores": {
+      url: "https://alfajores-forno.celo-testnet.org",
+      accounts: accounts,
+      chainId: 44787,
+    },
   },
   etherscan: {
-    apiKey: process.env.BASESCAN_API_KEY || "",
+    apiKey: {
+      base: process.env.BASESCAN_API_KEY || "",
+      celo: process.env.CELOSCAN_API_KEY || "",
+      "celo-alfajores": process.env.CELOSCAN_API_KEY || "",
+    },
     customChains: [
       {
         network: "base",
@@ -39,6 +53,22 @@ module.exports = {
         urls: {
           apiURL: "https://api.basescan.org/api",
           browserURL: "https://basescan.org"
+        }
+      },
+      {
+        network: "celo",
+        chainId: 42220,
+        urls: {
+          apiURL: "https://api.celoscan.io/api",
+          browserURL: "https://celoscan.io"
+        }
+      },
+      {
+        network: "celo-alfajores",
+        chainId: 44787,
+        urls: {
+          apiURL: "https://api-alfajores.celoscan.io/api",
+          browserURL: "https://alfajores.celoscan.io"
         }
       }
     ]
